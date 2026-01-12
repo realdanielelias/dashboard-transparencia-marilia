@@ -51,21 +51,6 @@ python run_scraping.py
 ```bash
 streamlit run dashboard/app.py
 ```
-
-## Implantação na Nuvem
-
-### Streamlit Cloud (Recomendado)
-1. Faça upload do código para GitHub
-2. Acesse [share.streamlit.io](https://share.streamlit.io)
-3. Conecte sua conta GitHub
-4. Selecione o repositório e arquivo principal (`dashboard/app.py`)
-
-### Heroku
-1. Instale Heroku CLI
-2. Login: `heroku login`
-3. Criar app: `heroku create nome-do-app`
-4. Deploy: `git push heroku main`
-
 ## Estrutura do Projeto
 
 ```
