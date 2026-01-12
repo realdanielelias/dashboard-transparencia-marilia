@@ -1,3 +1,5 @@
+# RU4590111 Daniel Elias de Souza
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,9 +7,9 @@ import os
 import duckdb
 import altair as alt
 import sys
-import matplotlib  # Ensure matplotlib is imported for styling
+import matplotlib  # Garantir que matplotlib seja importado para estilização
 
-# Add parent directory to path to import config
+# Adicionar diretório pai ao caminho para importar config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import DATA_DIR
 from utils import rename_columns, convert_numeric_columns
@@ -48,7 +50,7 @@ def get_dataset_type(filename):
         return 'investimentos'
     return 'unknown'
 
-# Create DuckDB connection and register tables
+# Criar conexão DuckDB e registrar tabelas
 conn = duckdb.connect(database=':memory:', read_only=False)
 
 for label, file in datasets.items():
@@ -57,17 +59,17 @@ for label, file in datasets.items():
         table_name = file.replace('.csv', '').replace('-', '_').replace(' ', '_').lower()
         conn.register(table_name, df)
 
-# Sidebar for controls
+# Barra lateral para controles
 st.sidebar.header("🎛️ Controles")
 
-# Dataset selection
+# Seleção de conjunto de dados
 selected_dataset = st.sidebar.selectbox(
     "Selecionar Conjunto de Dados",
     list(datasets.keys()),
     index=0
 )
 
-# Load selected dataset
+# Carregar conjunto de dados selecionado
 df = load_csv(datasets[selected_dataset])
 
 table_name = datasets[selected_dataset].replace('.csv', '').replace('-', '_').replace(' ', '_').lower()
@@ -75,7 +77,7 @@ table_name = datasets[selected_dataset].replace('.csv', '').replace('-', '_').re
 if df is not None:
     st.header(f"📋 {selected_dataset}")
 
-    # Basic info
+    # Informações básicas
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Total de Linhas", len(df))
@@ -85,18 +87,18 @@ if df is not None:
         if 'Ano' in df.columns:
             st.metric("Anos", len(df['Ano'].unique()))
 
-    # Column selection
+    # Seleção de colunas
     st.subheader("🔍 Seleção de Colunas")
     selected_columns = st.multiselect(
         "Escolha as colunas para exibir:",
         df.columns.tolist(),
-        default=df.columns.tolist()[:5]  # Default to first 5 columns
+        default=df.columns.tolist()[:5]  # Padrão para primeiras 5 colunas
     )
 
-    # Filtering options
+    # Opções de filtragem
     st.subheader("🎯 Filtros")
 
-    # Year filter (if available)
+    # Filtro de ano (se disponível)
     if 'Ano' in df.columns:
         years = sorted(df['Ano'].unique())
         selected_years = st.multiselect("Selecionar Anos:", years, default=years)
@@ -107,7 +109,7 @@ if df is not None:
     else:
         df_filtered = df[selected_columns]
 
-    # Text search filter
+    # Filtro de busca de texto
     search_term = st.text_input("Buscar em colunas de texto:")
     if search_term:
         text_columns = df_filtered.select_dtypes(include=['object']).columns
@@ -116,7 +118,7 @@ if df is not None:
             mask |= df_filtered[col].astype(str).str.contains(search_term, case=False, na=False)
         df_filtered = df_filtered[mask]
 
-    # Numeric filters
+    # Filtros numéricos
     numeric_columns = df_filtered.select_dtypes(include=['number']).columns
     if len(numeric_columns) > 0:
         filter_col = st.selectbox("Filtrar por coluna numérica:", ["Nenhuma"] + list(numeric_columns))
@@ -133,11 +135,11 @@ if df is not None:
                 (df_filtered[filter_col] <= value_range[1])
             ]
 
-    # Display filtered data
+    # Exibir dados filtrados
     st.subheader("📊 Tabela de Dados")
     st.dataframe(df_filtered, width='stretch')
 
-    # Summary statistics
+    # Estatísticas resumidas
     if st.checkbox("Mostrar Estatísticas Resumidas"):
         st.subheader("📈 Estatísticas Resumidas")
         st.write(df_filtered.describe())
@@ -145,7 +147,7 @@ if df is not None:
     # Charts
     st.subheader("📊 Visualizações")
 
-    # Create tabs for different chart types
+    # Criar abas para diferentes tipos de gráficos
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Barras", "🥧 Pizza", "📈 Distribuição", "📉 Correlação", "📅 Temporal"])
 
     with tab1:
@@ -162,19 +164,19 @@ if df is not None:
                 chart_type = st.selectbox("Tipo:", ["Horizontal", "Vertical", "Normalizado"], key="bar_type")
 
             if chart_col:
-                # Get top N categories
+                # Obter top N categorias
                 top_categories = df_filtered[chart_col].value_counts().head(top_n)
                 chart_data = pd.DataFrame({
                     'categoria': top_categories.index,
                     'contagem': top_categories.values
                 })
 
-                # Calculate percentages
+                # Calcular percentuais
                 total = top_categories.sum()
                 chart_data['percentual'] = (chart_data['contagem'] / total * 100).round(1)
 
                 if chart_type == "Horizontal":
-                    # Horizontal bar chart
+                    # Gráfico de barras horizontal
                     chart = alt.Chart(chart_data).mark_bar(
                         color='steelblue',
                         opacity=0.8
@@ -184,7 +186,7 @@ if df is not None:
                         tooltip=['categoria', 'contagem', 'percentual']
                     ).properties(height=400)
                 elif chart_type == "Vertical":
-                    # Vertical bar chart
+                    # Gráfico de barras vertical
                     chart = alt.Chart(chart_data).mark_bar(
                         color='steelblue',
                         opacity=0.8
@@ -194,7 +196,7 @@ if df is not None:
                         tooltip=['categoria', 'contagem', 'percentual']
                     ).properties(height=400)
                 else:  # Normalizado
-                    # Normalized bar chart (percentages)
+                    # Gráfico de barras normalizado (percentuais)
                     chart = alt.Chart(chart_data).mark_bar(
                         color='steelblue',
                         opacity=0.8
@@ -206,7 +208,7 @@ if df is not None:
 
                 st.altair_chart(chart, width='stretch')
 
-                # Summary statistics
+                # Estatísticas resumidas
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("Total de Categorias", len(df_filtered[chart_col].unique()))
@@ -218,7 +220,7 @@ if df is not None:
                     top_percentage = (top_categories.iloc[0] / top_categories.sum()) * 100
                     st.metric("Percentual Top", f"{top_percentage:.1f}%")
 
-                # Detailed breakdown table
+                # Tabela de detalhamento
                 st.subheader("📋 Detalhamento")
                 display_data = chart_data.copy()
                 display_data['percentual'] = display_data['percentual'].astype(str) + '%'
@@ -244,9 +246,9 @@ if df is not None:
                 show_labels = st.checkbox("Mostrar rótulos", value=True, key="pie_labels")
 
             if pie_col:
-                # Get top categories for pie chart
+                # Obter categorias principais para gráfico de pizza
                 pie_data = df_filtered[pie_col].value_counts().head(pie_limit)
-                # Add "Outros" category if there are more categories
+                # Adicionar categoria "Outros" se houver mais categorias
                 if len(df_filtered[pie_col].value_counts()) > pie_limit:
                     other_count = df_filtered[pie_col].value_counts().iloc[pie_limit:].sum()
                     pie_data = pd.concat([pie_data, pd.Series({'Outros': other_count})])
@@ -258,7 +260,7 @@ if df is not None:
 
                 pie_df['percentual'] = (pie_df['valor'] / pie_df['valor'].sum() * 100).round(1)
 
-                # Create pie chart
+                # Criar gráfico de pizza
                 if show_labels:
                     pie_chart = alt.Chart(pie_df).mark_arc(
                         innerRadius=50,
@@ -286,7 +288,7 @@ if df is not None:
 
                 st.altair_chart(pie_chart, width='stretch')
 
-                # Summary metrics
+                # Métricas resumidas
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("Total de Categorias", len(pie_df))
@@ -298,7 +300,7 @@ if df is not None:
                     entropy = -sum((pie_df['percentual']/100) * np.log2(pie_df['percentual']/100)) if len(pie_df) > 1 else 0
                     st.metric("Concentração", f"{entropy:.1f}")
 
-                # Detailed breakdown
+                # Detalhamento detalhado
                 st.subheader("📋 Detalhamento por Categoria")
                 display_df = pie_df.copy()
                 display_df['percentual'] = display_df['percentual'].astype(str) + '%'
@@ -308,14 +310,14 @@ if df is not None:
                     width='stretch'
                 )
 
-                # Additional insights
+                # Insights adicionais
                 if len(pie_df) > 1:
                     st.subheader("💡 Insights")
                     entropy = -sum((pie_df['percentual']/100) * np.log2(pie_df['percentual']/100))
                     diversity = "Alta" if entropy > 2 else "Média" if entropy > 1 else "Baixa"
                     st.info(f"**Diversidade de distribuição:** {diversity} (entropia = {entropy:.2f})")
 
-                    # Check for dominant category
+                    # Verificar categoria dominante
                     max_pct = pie_df['percentual'].max()
                     if max_pct > 50:
                         st.warning(f"⚠️ **Categoria dominante:** {pie_df.loc[pie_df['percentual'].idxmax(), 'categoria']} representa {max_pct:.1f}% do total")
@@ -332,7 +334,7 @@ if df is not None:
                 bins = st.slider("Número de bins:", 10, 50, 20, key="hist_bins")
 
             if hist_col:
-                # Remove NaN values for histogram
+                # Remover valores NaN para o histograma
                 hist_data = df_filtered[hist_col].dropna()
 
                 if len(hist_data) > 0:
@@ -348,13 +350,13 @@ if df is not None:
 
                     st.altair_chart(hist, width='stretch')
 
-                    # Basic statistics
+                    # Estatísticas básicas
                     mean_val = hist_data.mean()
                     median_val = hist_data.median()
                     min_val = hist_data.min()
                     max_val = hist_data.max()
 
-                    # Handle NaN values
+                    # Tratar valores NaN
                     mean_val = mean_val if not pd.isna(mean_val) else 0.0
                     median_val = median_val if not pd.isna(median_val) else 0.0
                     min_val = min_val if not pd.isna(min_val) else 0.0
@@ -378,7 +380,7 @@ if df is not None:
         st.markdown("**📊 Análise de Correlação** - Relacionamentos entre variáveis")
 
         if len(numeric_columns) >= 2:
-            # Correlation Matrix
+            # Matriz de Correlação
             st.subheader("Matriz de Correlação")
             corr_matrix = df_filtered[numeric_columns].corr()
 
@@ -402,7 +404,7 @@ if df is not None:
 
             st.altair_chart(heatmap, width='stretch')
 
-            # Correlation Table
+            # Tabela de Correlação
             st.subheader("Tabela de Correlação")
             st.dataframe(
                 corr_matrix.style.background_gradient(cmap='RdYlBu', axis=None, vmin=-1, vmax=1)
@@ -410,9 +412,9 @@ if df is not None:
                 width='stretch'
             )
 
-            # Top Correlations
+            # Correlações Mais Fortes
             st.subheader("Correlações Mais Fortes")
-            # Get upper triangle of correlation matrix
+            # Obter triângulo superior da matriz de correlação
             upper = corr_matrix.where(np.triu(np.ones_like(corr_matrix), k=1).astype(bool))
             top_corr = upper.stack().sort_values(ascending=False).head(10)
 
@@ -429,7 +431,7 @@ if df is not None:
                     width='stretch'
                 )
 
-            # Scatter Plot Section
+            # Seção de Scatter Plot
             st.subheader("Scatter Plot Interativo")
             col1, col2, col3 = st.columns([1, 1, 1])
             with col1:
@@ -440,11 +442,11 @@ if df is not None:
                 color_by = st.selectbox("Colorir por:", ["Nenhum"] + list(categorical_cols), key="scatter_color")
 
             if x_col and y_col and x_col != y_col:
-                # Create scatter data with unique column names
+                # Criar dados de dispersão com nomes de colunas únicos
                 scatter_data = df_filtered[[x_col, y_col]].dropna().copy()
                 if len(scatter_data) > 0:
                     if color_by != "Nenhum" and color_by in df_filtered.columns and color_by not in [x_col, y_col]:
-                        # Safe addition of color column
+                        # Adição segura da coluna de cor
                         color_values = df_filtered.loc[scatter_data.index, color_by]
                         scatter_data = pd.concat([scatter_data, color_values.rename(color_by)], axis=1)
 
@@ -463,7 +465,7 @@ if df is not None:
 
                     st.altair_chart(scatter, width='stretch')
 
-                    # Detailed correlation statistics
+                    # Estatísticas detalhadas de correlação
                     corr = scatter_data[x_col].corr(scatter_data[y_col])
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
@@ -473,7 +475,7 @@ if df is not None:
                     with col3:
                         st.metric("Pontos", len(scatter_data))
                     with col4:
-                        # Interpret correlation strength
+                        # Interpretar força da correlação
                         strength = "Forte" if abs(corr) > 0.7 else "Moderada" if abs(corr) > 0.3 else "Fraca"
                         direction = "Positiva" if corr > 0 else "Negativa" if corr < 0 else "Nenhuma"
                         st.metric("Força", f"{strength} ({direction})")
@@ -497,7 +499,7 @@ if df is not None:
                     chart_type = st.selectbox("Tipo:", ["Linha", "Área", "Barra"], key="ts_type")
 
                 if ts_col:
-                    # Aggregate data by year
+                    # Agregar dados por ano
                     if agg_func == "Soma":
                         ts_data = df_filtered.groupby('Ano')[ts_col].sum().reset_index()
                     elif agg_func == "Média":
@@ -505,7 +507,7 @@ if df is not None:
                     else:  # Contagem
                         ts_data = df_filtered.groupby('Ano')[ts_col].count().reset_index()
 
-                    # Create appropriate chart type
+                    # Criar tipo de gráfico apropriado
                     if chart_type == "Linha":
                         ts_chart = alt.Chart(ts_data).mark_line(
                             point=True,
@@ -537,19 +539,19 @@ if df is not None:
 
                     st.altair_chart(ts_chart, width='stretch')
 
-                    # Enhanced trend analysis
+                    # Análise de tendência aprimorada
                     if len(ts_data) > 1:
-                        # Calculate trend metrics
+                        # Calcular métricas de tendência
                         first_val = ts_data[ts_col].iloc[0]
                         last_val = ts_data[ts_col].iloc[-1]
                         change_pct = ((last_val - first_val) / first_val) * 100 if first_val != 0 else 0
 
-                        # Calculate volatility (coefficient of variation)
+                        # Calcular volatilidade (coeficiente de variação)
                         mean_val = ts_data[ts_col].mean()
                         std_val = ts_data[ts_col].std()
                         volatility = (std_val / mean_val * 100) if mean_val != 0 else 0
 
-                        # Display enhanced metrics
+                        # Exibir métricas aprimoradas
                         col1, col2, col3, col4 = st.columns(4)
                         with col1:
                             trend = "📈 Crescimento" if change_pct > 0 else "📉 Declínio" if change_pct < 0 else "➡️ Estável"
@@ -561,7 +563,7 @@ if df is not None:
                         with col4:
                             st.metric("Volatilidade", f"{volatility:.1f}%")
 
-                        # Year-over-year changes
+                        # Variações ano a ano
                         if len(ts_data) > 2:
                             st.subheader("📊 Variações Ano a Ano")
                             yoy_changes = []
@@ -590,19 +592,19 @@ if df is not None:
 
                                 st.altair_chart(yoy_chart, width='stretch')
 
-                                # Summary of changes
+                                # Resumo das mudanças
                                 positive_changes = sum(1 for change in yoy_changes if change['Variação'] > 0)
                                 total_changes = len(yoy_changes)
                                 consistency = (positive_changes / total_changes) * 100 if total_changes > 0 else 0
 
                                 st.metric("Consistência de Crescimento", ".0f")
 
-                    # Data table with enhanced formatting
+                    # Tabela de dados com formatação aprimorada
                     st.subheader("📋 Dados Temporais Detalhados")
                     display_ts = ts_data.copy()
                     display_ts[ts_col] = display_ts[ts_col].round(2)
 
-                    # Add percentage change column
+                    # Adicionar coluna de variação percentual
                     if len(display_ts) > 1:
                         display_ts['Variação %'] = display_ts[ts_col].pct_change() * 100
                         display_ts['Variação %'] = display_ts['Variação %'].round(1)
@@ -617,7 +619,7 @@ if df is not None:
         else:
             st.info("Coluna 'Ano' não encontrada para análise temporal.")
 
-    # Download filtered data
+    # Baixar dados filtrados
     csv = df_filtered.to_csv(index=False)
     st.download_button(
         label="📥 Baixar Dados Filtrados como CSV",
@@ -626,7 +628,7 @@ if df is not None:
         mime="text/csv"
     )
 
-    # SQL Query Section (keep this for advanced users)
+    # Seção de Consulta SQL (manter para usuários avançados)
     st.header("🔍 Interface Avançada de Consulta SQL")
     with st.expander("Consulta SQL (para usuários avançados)"):
         st.markdown("Use SQL para consultar seus dados. Tabelas disponíveis:")
@@ -641,7 +643,7 @@ if df is not None:
                 st.success(f"Consulta executada com sucesso! Retornou {len(result)} linhas.")
                 st.dataframe(result, width='stretch')
 
-                # Download button
+                # Botão de download
                 csv = result.to_csv(index=False)
                 st.download_button(
                     label="📥 Baixar Resultados SQL como CSV",

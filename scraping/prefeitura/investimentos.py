@@ -1,3 +1,5 @@
+# RU4590111 Daniel Elias de Souza
+
 from scraping.universal_scraper import scrape_visao
 
 def scrape_investimentos(periodo="JANEIRO"):

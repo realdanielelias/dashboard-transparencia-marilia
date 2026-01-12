@@ -1,3 +1,5 @@
+# RU4590111 Daniel Elias de Souza
+
 #!/usr/bin/env python3
 """
 Script para executar scraping completo da Receita Analítica.

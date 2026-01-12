@@ -1,3 +1,5 @@
+# RU4590111 Daniel Elias de Souza
+
 from scraping.camara_api import scrape_camara_despesas_2020_2023
 
 # Scrapers da Prefeitura (cada um chama o universal_scraper)

@@ -1,3 +1,5 @@
+# RU4590111 Daniel Elias de Souza
+
 # Funções utilitárias para processamento de dados
 import pandas as pd
 import re
