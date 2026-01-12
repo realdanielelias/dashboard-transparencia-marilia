@@ -44,6 +44,8 @@ pip install -r requirements.txt
 
 4. Execute o scraping dos dados (opcional):
 ```bash
+# esse repositorio ja contem alguns dados baixados, mas caso queria testar o scrapping ou obter dados mais atualizados, delete os arquivos no /data e rode o comando abaixo:
+
 python run_scraping.py
 ```
 
