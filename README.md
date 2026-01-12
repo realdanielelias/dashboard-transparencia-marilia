@@ -1,0 +1,83 @@
+# Dashboard de Transparência Municipal - Marília/SP
+
+Dashboard interativo para análise de dados de transparência pública da Câmara Municipal e Prefeitura de Marília/SP.
+
+## Funcionalidades
+
+- 📊 Visualizações interativas (barras, pizza, distribuições, correlações)
+- 🔍 Consultas SQL diretas nos dados
+- 📥 Exportação de dados filtrados
+- 🌐 Interface em português
+- 📈 Análises estatísticas automáticas
+
+## Conjuntos de Dados
+
+- Câmara Municipal: Despesas (2020-2023)
+- Prefeitura: COVID-19, Passagens, Investimentos, Receita Analítica, Emendas Parlamentares
+
+## Como Executar Localmente
+
+### Pré-requisitos
+- Python 3.8+
+- Git
+
+### Instalação
+
+1. Clone o repositório:
+```bash
+git clone <url-do-repositorio>
+cd dashboard
+```
+
+2. Crie um ambiente virtual:
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# ou
+.venv\Scripts\activate     # Windows
+```
+
+3. Instale as dependências:
+```bash
+pip install -r requirements.txt
+```
+
+4. Execute o scraping dos dados (opcional):
+```bash
+python run_scraping.py
+```
+
+5. Execute o dashboard:
+```bash
+streamlit run dashboard/app.py
+```
+
+## Implantação na Nuvem
+
+### Streamlit Cloud (Recomendado)
+1. Faça upload do código para GitHub
+2. Acesse [share.streamlit.io](https://share.streamlit.io)
+3. Conecte sua conta GitHub
+4. Selecione o repositório e arquivo principal (`dashboard/app.py`)
+
+### Heroku
+1. Instale Heroku CLI
+2. Login: `heroku login`
+3. Criar app: `heroku create nome-do-app`
+4. Deploy: `git push heroku main`
+
+## Estrutura do Projeto
+
+```
+dashboard/
+├── dashboard/app.py          # Aplicação principal Streamlit
+├── scraping/                 # Scripts de coleta de dados
+├── data/                     # Dados coletados (CSV)
+├── utils.py                  # Funções utilitárias
+├── requirements.txt          # Dependências Python
+└── run_scraping.py          # Script para executar todos os scrapers
+```
+
+## Licença
+
+Este projeto é open source e pode ser usado livremente para fins educacionais e de transparência pública.

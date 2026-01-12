@@ -1,0 +1,656 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import os
+import duckdb
+import altair as alt
+import sys
+import matplotlib  # Ensure matplotlib is imported for styling
+
+# Add parent directory to path to import config
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import DATA_DIR
+from utils import rename_columns, convert_numeric_columns
+
+st.set_page_config(page_title="Dashboard Marília", layout="wide")
+st.title("📊 Dashboard de Dados Públicos de Marília")
+
+def load_csv(name):
+    path = os.path.join(DATA_DIR, name)
+    if os.path.exists(path):
+        df = pd.read_csv(path)
+        # Determina o tipo do dataset e renomeia colunas
+        dataset_type = get_dataset_type(name)
+        df = rename_columns(df, dataset_type)
+        # Converte colunas numéricas automaticamente
+        df = convert_numeric_columns(df)
+        return df
+    return None
+
+datasets = {
+    "Despesas da Câmara (2020-2023)": "camara_despesas_2020_2023.csv",
+    "Receita Analítica da Prefeitura": "ReceitaAnalitica_dados.csv",
+    "Despesas COVID da Prefeitura": "despesacovid_dados.csv",
+    "Passagens da Prefeitura": "passagenslocomocao_dados.csv",
+    "Investimentos da Prefeitura": "DespesaseInvestimentos_dados.csv",
+    "Emendas Parlamentares da Prefeitura": "EmendasParlamentares_dados.csv"
+}
+
+# Determina o tipo do dataset para renomear colunas
+def get_dataset_type(filename):
+    if 'camara' in filename:
+        return 'camara'
+    elif 'covid' in filename:
+        return 'covid'
+    elif 'passagens' in filename:
+        return 'passagens'
+    elif 'investimentos' in filename:
+        return 'investimentos'
+    return 'unknown'
+
+# Create DuckDB connection and register tables
+conn = duckdb.connect(database=':memory:', read_only=False)
+
+for label, file in datasets.items():
+    df = load_csv(file)
+    if df is not None:
+        table_name = file.replace('.csv', '').replace('-', '_').replace(' ', '_').lower()
+        conn.register(table_name, df)
+
+# Sidebar for controls
+st.sidebar.header("🎛️ Controles")
+
+# Dataset selection
+selected_dataset = st.sidebar.selectbox(
+    "Selecionar Conjunto de Dados",
+    list(datasets.keys()),
+    index=0
+)
+
+# Load selected dataset
+df = load_csv(datasets[selected_dataset])
+
+table_name = datasets[selected_dataset].replace('.csv', '').replace('-', '_').replace(' ', '_').lower()
+
+if df is not None:
+    st.header(f"📋 {selected_dataset}")
+
+    # Basic info
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total de Linhas", len(df))
+    with col2:
+        st.metric("Total de Colunas", len(df.columns))
+    with col3:
+        if 'Ano' in df.columns:
+            st.metric("Anos", len(df['Ano'].unique()))
+
+    # Column selection
+    st.subheader("🔍 Seleção de Colunas")
+    selected_columns = st.multiselect(
+        "Escolha as colunas para exibir:",
+        df.columns.tolist(),
+        default=df.columns.tolist()[:5]  # Default to first 5 columns
+    )
+
+    # Filtering options
+    st.subheader("🎯 Filtros")
+
+    # Year filter (if available)
+    if 'Ano' in df.columns:
+        years = sorted(df['Ano'].unique())
+        selected_years = st.multiselect("Selecionar Anos:", years, default=years)
+        if selected_years:
+            df_filtered = df[df['Ano'].isin(selected_years) & df[selected_columns].notna().any(axis=1)]
+        else:
+            df_filtered = df[selected_columns]
+    else:
+        df_filtered = df[selected_columns]
+
+    # Text search filter
+    search_term = st.text_input("Buscar em colunas de texto:")
+    if search_term:
+        text_columns = df_filtered.select_dtypes(include=['object']).columns
+        mask = pd.Series(False, index=df_filtered.index)
+        for col in text_columns:
+            mask |= df_filtered[col].astype(str).str.contains(search_term, case=False, na=False)
+        df_filtered = df_filtered[mask]
+
+    # Numeric filters
+    numeric_columns = df_filtered.select_dtypes(include=['number']).columns
+    if len(numeric_columns) > 0:
+        filter_col = st.selectbox("Filtrar por coluna numérica:", ["Nenhuma"] + list(numeric_columns))
+        if filter_col != "Nenhuma":
+            min_val = float(df_filtered[filter_col].min())
+            max_val = float(df_filtered[filter_col].max())
+            value_range = st.slider(
+                f"Faixa para {filter_col}:",
+                min_val, max_val,
+                (min_val, max_val)
+            )
+            df_filtered = df_filtered[
+                (df_filtered[filter_col] >= value_range[0]) &
+                (df_filtered[filter_col] <= value_range[1])
+            ]
+
+    # Display filtered data
+    st.subheader("📊 Tabela de Dados")
+    st.dataframe(df_filtered, width='stretch')
+
+    # Summary statistics
+    if st.checkbox("Mostrar Estatísticas Resumidas"):
+        st.subheader("📈 Estatísticas Resumidas")
+        st.write(df_filtered.describe())
+
+    # Charts
+    st.subheader("📊 Visualizações")
+
+    # Create tabs for different chart types
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Barras", "🥧 Pizza", "📈 Distribuição", "📉 Correlação", "📅 Temporal"])
+
+    with tab1:
+        st.markdown("**📊 Análise de Barras** - Distribuição de categorias")
+
+        categorical_cols = df_filtered.select_dtypes(include=['object']).columns
+        if len(categorical_cols) > 0:
+            col1, col2, col3 = st.columns([1.5, 1, 1])
+            with col1:
+                chart_col = st.selectbox("Coluna categórica:", categorical_cols, key="bar_chart_col")
+            with col2:
+                top_n = st.slider("Top N categorias:", 5, 20, 10, key="bar_top_n")
+            with col3:
+                chart_type = st.selectbox("Tipo:", ["Horizontal", "Vertical", "Normalizado"], key="bar_type")
+
+            if chart_col:
+                # Get top N categories
+                top_categories = df_filtered[chart_col].value_counts().head(top_n)
+                chart_data = pd.DataFrame({
+                    'categoria': top_categories.index,
+                    'contagem': top_categories.values
+                })
+
+                # Calculate percentages
+                total = top_categories.sum()
+                chart_data['percentual'] = (chart_data['contagem'] / total * 100).round(1)
+
+                if chart_type == "Horizontal":
+                    # Horizontal bar chart
+                    chart = alt.Chart(chart_data).mark_bar(
+                        color='steelblue',
+                        opacity=0.8
+                    ).encode(
+                        x=alt.X('contagem:Q', title='Contagem'),
+                        y=alt.Y('categoria:N', sort='-x', title=chart_col),
+                        tooltip=['categoria', 'contagem', 'percentual']
+                    ).properties(height=400)
+                elif chart_type == "Vertical":
+                    # Vertical bar chart
+                    chart = alt.Chart(chart_data).mark_bar(
+                        color='steelblue',
+                        opacity=0.8
+                    ).encode(
+                        x=alt.X('categoria:N', title=chart_col, sort='-y'),
+                        y=alt.Y('contagem:Q', title='Contagem'),
+                        tooltip=['categoria', 'contagem', 'percentual']
+                    ).properties(height=400)
+                else:  # Normalizado
+                    # Normalized bar chart (percentages)
+                    chart = alt.Chart(chart_data).mark_bar(
+                        color='steelblue',
+                        opacity=0.8
+                    ).encode(
+                        x=alt.X('percentual:Q', title='Percentual (%)'),
+                        y=alt.Y('categoria:N', sort='-x', title=chart_col),
+                        tooltip=['categoria', 'contagem', 'percentual']
+                    ).properties(height=400)
+
+                st.altair_chart(chart, width='stretch')
+
+                # Summary statistics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total de Categorias", len(df_filtered[chart_col].unique()))
+                with col2:
+                    st.metric("Top Categoria", top_categories.index[0])
+                with col3:
+                    st.metric("Contagem Top", int(top_categories.iloc[0]))
+                with col4:
+                    top_percentage = (top_categories.iloc[0] / top_categories.sum()) * 100
+                    st.metric("Percentual Top", f"{top_percentage:.1f}%")
+
+                # Detailed breakdown table
+                st.subheader("📋 Detalhamento")
+                display_data = chart_data.copy()
+                display_data['percentual'] = display_data['percentual'].astype(str) + '%'
+                st.dataframe(
+                    display_data.style.background_gradient(subset=['contagem'], cmap='Blues')
+                    .format({'contagem': '{:,}', 'percentual': '{}'}),
+                    width='stretch'
+                )
+        else:
+            st.info("Nenhuma coluna categórica disponível para gráfico de barras.")
+
+    with tab2:
+        st.markdown("**🥧 Análise de Pizza** - Proporções das categorias")
+
+        categorical_cols = df_filtered.select_dtypes(include=['object']).columns
+        if len(categorical_cols) > 0:
+            col1, col2, col3 = st.columns([1.5, 1, 1])
+            with col1:
+                pie_col = st.selectbox("Coluna categórica:", categorical_cols, key="pie_chart_col")
+            with col2:
+                pie_limit = st.slider("Máximo de categorias:", 5, 15, 8, key="pie_limit")
+            with col3:
+                show_labels = st.checkbox("Mostrar rótulos", value=True, key="pie_labels")
+
+            if pie_col:
+                # Get top categories for pie chart
+                pie_data = df_filtered[pie_col].value_counts().head(pie_limit)
+                # Add "Outros" category if there are more categories
+                if len(df_filtered[pie_col].value_counts()) > pie_limit:
+                    other_count = df_filtered[pie_col].value_counts().iloc[pie_limit:].sum()
+                    pie_data = pd.concat([pie_data, pd.Series({'Outros': other_count})])
+
+                pie_df = pd.DataFrame({
+                    'categoria': pie_data.index,
+                    'valor': pie_data.values
+                })
+
+                pie_df['percentual'] = (pie_df['valor'] / pie_df['valor'].sum() * 100).round(1)
+
+                # Create pie chart
+                if show_labels:
+                    pie_chart = alt.Chart(pie_df).mark_arc(
+                        innerRadius=50,
+                        outerRadius=120
+                    ).encode(
+                        theta=alt.Theta('valor:Q'),
+                        color=alt.Color('categoria:N',
+                            scale=alt.Scale(scheme='category20'),
+                            legend=alt.Legend(title=pie_col, orient='bottom')
+                        ),
+                        tooltip=['categoria', 'valor', 'percentual']
+                    ).properties(height=350)
+                else:
+                    pie_chart = alt.Chart(pie_df).mark_arc(
+                        innerRadius=50,
+                        outerRadius=120
+                    ).encode(
+                        theta=alt.Theta('valor:Q'),
+                        color=alt.Color('categoria:N',
+                            scale=alt.Scale(scheme='category20'),
+                            legend=alt.Legend(title=pie_col, orient='bottom')
+                        ),
+                        tooltip=['categoria', 'valor', 'percentual']
+                    ).properties(height=350)
+
+                st.altair_chart(pie_chart, width='stretch')
+
+                # Summary metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total de Categorias", len(pie_df))
+                with col2:
+                    st.metric("Maior Fatia", pie_df.loc[pie_df['valor'].idxmax(), 'categoria'])
+                with col3:
+                    st.metric("Percentual Maior", f"{pie_df['percentual'].max():.1f}%")
+                with col4:
+                    entropy = -sum((pie_df['percentual']/100) * np.log2(pie_df['percentual']/100)) if len(pie_df) > 1 else 0
+                    st.metric("Concentração", f"{entropy:.1f}")
+
+                # Detailed breakdown
+                st.subheader("📋 Detalhamento por Categoria")
+                display_df = pie_df.copy()
+                display_df['percentual'] = display_df['percentual'].astype(str) + '%'
+                st.dataframe(
+                    display_df.style.background_gradient(subset=['valor'], cmap='Oranges')
+                    .format({'valor': '{:,}', 'percentual': '{}'}),
+                    width='stretch'
+                )
+
+                # Additional insights
+                if len(pie_df) > 1:
+                    st.subheader("💡 Insights")
+                    entropy = -sum((pie_df['percentual']/100) * np.log2(pie_df['percentual']/100))
+                    diversity = "Alta" if entropy > 2 else "Média" if entropy > 1 else "Baixa"
+                    st.info(f"**Diversidade de distribuição:** {diversity} (entropia = {entropy:.2f})")
+
+                    # Check for dominant category
+                    max_pct = pie_df['percentual'].max()
+                    if max_pct > 50:
+                        st.warning(f"⚠️ **Categoria dominante:** {pie_df.loc[pie_df['percentual'].idxmax(), 'categoria']} representa {max_pct:.1f}% do total")
+        else:
+            st.info("Nenhuma coluna categórica disponível para gráfico de pizza.")
+
+    with tab3:
+        st.markdown("**Histogramas e Distribuições** - Análise de valores numéricos")
+        if len(numeric_columns) > 0:
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                hist_col = st.selectbox("Coluna numérica:", numeric_columns, key="hist_col")
+            with col2:
+                bins = st.slider("Número de bins:", 10, 50, 20, key="hist_bins")
+
+            if hist_col:
+                # Remove NaN values for histogram
+                hist_data = df_filtered[hist_col].dropna()
+
+                if len(hist_data) > 0:
+                    # Histogram
+                    hist = alt.Chart(pd.DataFrame({hist_col: hist_data})).mark_bar(
+                        opacity=0.7,
+                        color='lightblue'
+                    ).encode(
+                        x=alt.X(f'{hist_col}:Q', bin=alt.Bin(maxbins=bins), title=hist_col),
+                        y=alt.Y('count()', title='Frequência'),
+                        tooltip=[alt.Tooltip(f'{hist_col}:Q', bin=True), 'count()']
+                    ).properties(height=300)
+
+                    st.altair_chart(hist, width='stretch')
+
+                    # Basic statistics
+                    mean_val = hist_data.mean()
+                    median_val = hist_data.median()
+                    min_val = hist_data.min()
+                    max_val = hist_data.max()
+
+                    # Handle NaN values
+                    mean_val = mean_val if not pd.isna(mean_val) else 0.0
+                    median_val = median_val if not pd.isna(median_val) else 0.0
+                    min_val = min_val if not pd.isna(min_val) else 0.0
+                    max_val = max_val if not pd.isna(max_val) else 0.0
+
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Média", f"{mean_val:.2f}")
+                    with col2:
+                        st.metric("Mediana", f"{median_val:.2f}")
+                    with col3:
+                        st.metric("Mín", f"{min_val:.2f}")
+                    with col4:
+                        st.metric("Máx", f"{max_val:.2f}")
+                else:
+                    st.warning("Não há dados suficientes para criar o histograma.")
+        else:
+            st.info("Nenhuma coluna numérica disponível para histogramas.")
+
+    with tab4:
+        st.markdown("**📊 Análise de Correlação** - Relacionamentos entre variáveis")
+
+        if len(numeric_columns) >= 2:
+            # Correlation Matrix
+            st.subheader("Matriz de Correlação")
+            corr_matrix = df_filtered[numeric_columns].corr()
+
+            # Heatmap
+            corr_data = corr_matrix.reset_index().melt(id_vars='index')
+            corr_data.columns = ['Variável 1', 'Variável 2', 'Correlação']
+
+            heatmap = alt.Chart(corr_data).mark_rect().encode(
+                x=alt.X('Variável 1:N', title=''),
+                y=alt.Y('Variável 2:N', title=''),
+                color=alt.Color('Correlação:Q',
+                    scale=alt.Scale(domain=(-1, 1), range=['darkred', 'white', 'darkblue']),
+                    legend=alt.Legend(title="Correlação")
+                ),
+                tooltip=['Variável 1', 'Variável 2', alt.Tooltip('Correlação', format='.3f')]
+            ).properties(
+                width=400,
+                height=400,
+                title="Heatmap de Correlação"
+            )
+
+            st.altair_chart(heatmap, width='stretch')
+
+            # Correlation Table
+            st.subheader("Tabela de Correlação")
+            st.dataframe(
+                corr_matrix.style.background_gradient(cmap='RdYlBu', axis=None, vmin=-1, vmax=1)
+                .format("{:.3f}"),
+                width='stretch'
+            )
+
+            # Top Correlations
+            st.subheader("Correlações Mais Fortes")
+            # Get upper triangle of correlation matrix
+            upper = corr_matrix.where(np.triu(np.ones_like(corr_matrix), k=1).astype(bool))
+            top_corr = upper.stack().sort_values(ascending=False).head(10)
+
+            if len(top_corr) > 0:
+                top_corr_df = pd.DataFrame({
+                    'Variável 1': [idx[0] for idx in top_corr.index],
+                    'Variável 2': [idx[1] for idx in top_corr.index],
+                    'Correlação': top_corr.values
+                })
+
+                st.dataframe(
+                    top_corr_df.style.background_gradient(subset=['Correlação'], cmap='RdYlBu', vmin=-1, vmax=1)
+                    .format({'Correlação': '{:.3f}'}),
+                    width='stretch'
+                )
+
+            # Scatter Plot Section
+            st.subheader("Scatter Plot Interativo")
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col1:
+                x_col = st.selectbox("Eixo X:", numeric_columns, key="scatter_x")
+            with col2:
+                y_col = st.selectbox("Eixo Y:", numeric_columns, key="scatter_y")
+            with col3:
+                color_by = st.selectbox("Colorir por:", ["Nenhum"] + list(categorical_cols), key="scatter_color")
+
+            if x_col and y_col and x_col != y_col:
+                # Create scatter data with unique column names
+                scatter_data = df_filtered[[x_col, y_col]].dropna().copy()
+                if len(scatter_data) > 0:
+                    if color_by != "Nenhum" and color_by in df_filtered.columns and color_by not in [x_col, y_col]:
+                        # Safe addition of color column
+                        color_values = df_filtered.loc[scatter_data.index, color_by]
+                        scatter_data = pd.concat([scatter_data, color_values.rename(color_by)], axis=1)
+
+                        scatter = alt.Chart(scatter_data).mark_circle(size=60).encode(
+                            x=alt.X(f'{x_col}:Q', title=x_col),
+                            y=alt.Y(f'{y_col}:Q', title=y_col),
+                            color=alt.Color(f'{color_by}:N', title=color_by),
+                            tooltip=[x_col, y_col, color_by]
+                        ).properties(height=400)
+                    else:
+                        scatter = alt.Chart(scatter_data).mark_circle(size=60, color='coral').encode(
+                            x=alt.X(f'{x_col}:Q', title=x_col),
+                            y=alt.Y(f'{y_col}:Q', title=y_col),
+                            tooltip=[x_col, y_col]
+                        ).properties(height=400)
+
+                    st.altair_chart(scatter, width='stretch')
+
+                    # Detailed correlation statistics
+                    corr = scatter_data[x_col].corr(scatter_data[y_col])
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Correlação Pearson", ".3f")
+                    with col2:
+                        st.metric("R²", ".3f")
+                    with col3:
+                        st.metric("Pontos", len(scatter_data))
+                    with col4:
+                        # Interpret correlation strength
+                        strength = "Forte" if abs(corr) > 0.7 else "Moderada" if abs(corr) > 0.3 else "Fraca"
+                        direction = "Positiva" if corr > 0 else "Negativa" if corr < 0 else "Nenhuma"
+                        st.metric("Força", f"{strength} ({direction})")
+                else:
+                    st.warning("Não há dados suficientes para criar o scatter plot.")
+            else:
+                st.info("Selecione variáveis diferentes para X e Y.")
+        else:
+            st.info("São necessárias pelo menos 2 colunas numéricas para análise de correlação.")
+
+    with tab5:
+        st.markdown("**Análise Temporal** - Evolução ao longo do tempo")
+        if 'Ano' in df_filtered.columns:
+            if len(numeric_columns) > 0:
+                col1, col2, col3 = st.columns([2, 1, 1])
+                with col1:
+                    ts_col = st.selectbox("Coluna numérica:", numeric_columns, key="ts_col")
+                with col2:
+                    agg_func = st.selectbox("Agregação:", ["Soma", "Média", "Contagem"], key="ts_agg")
+                with col3:
+                    chart_type = st.selectbox("Tipo:", ["Linha", "Área", "Barra"], key="ts_type")
+
+                if ts_col:
+                    # Aggregate data by year
+                    if agg_func == "Soma":
+                        ts_data = df_filtered.groupby('Ano')[ts_col].sum().reset_index()
+                    elif agg_func == "Média":
+                        ts_data = df_filtered.groupby('Ano')[ts_col].mean().reset_index()
+                    else:  # Contagem
+                        ts_data = df_filtered.groupby('Ano')[ts_col].count().reset_index()
+
+                    # Create appropriate chart type
+                    if chart_type == "Linha":
+                        ts_chart = alt.Chart(ts_data).mark_line(
+                            point=True,
+                            color='steelblue',
+                            strokeWidth=3
+                        ).encode(
+                            x=alt.X('Ano:O', title='Ano'),
+                            y=alt.Y(f'{ts_col}:Q', title=f'{agg_func} de {ts_col}'),
+                            tooltip=['Ano', alt.Tooltip(ts_col, format='.2f')]
+                        ).properties(height=350)
+                    elif chart_type == "Área":
+                        ts_chart = alt.Chart(ts_data).mark_area(
+                            color='lightblue',
+                            opacity=0.7
+                        ).encode(
+                            x=alt.X('Ano:O', title='Ano'),
+                            y=alt.Y(f'{ts_col}:Q', title=f'{agg_func} de {ts_col}'),
+                            tooltip=['Ano', alt.Tooltip(ts_col, format='.2f')]
+                        ).properties(height=350)
+                    else:  # Barra
+                        ts_chart = alt.Chart(ts_data).mark_bar(
+                            color='steelblue',
+                            opacity=0.8
+                        ).encode(
+                            x=alt.X('Ano:O', title='Ano'),
+                            y=alt.Y(f'{ts_col}:Q', title=f'{agg_func} de {ts_col}'),
+                            tooltip=['Ano', alt.Tooltip(ts_col, format='.2f')]
+                        ).properties(height=350)
+
+                    st.altair_chart(ts_chart, width='stretch')
+
+                    # Enhanced trend analysis
+                    if len(ts_data) > 1:
+                        # Calculate trend metrics
+                        first_val = ts_data[ts_col].iloc[0]
+                        last_val = ts_data[ts_col].iloc[-1]
+                        change_pct = ((last_val - first_val) / first_val) * 100 if first_val != 0 else 0
+
+                        # Calculate volatility (coefficient of variation)
+                        mean_val = ts_data[ts_col].mean()
+                        std_val = ts_data[ts_col].std()
+                        volatility = (std_val / mean_val * 100) if mean_val != 0 else 0
+
+                        # Display enhanced metrics
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            trend = "📈 Crescimento" if change_pct > 0 else "📉 Declínio" if change_pct < 0 else "➡️ Estável"
+                            st.metric("Tendência Geral", trend)
+                        with col2:
+                            st.metric(f"Variação Total ({ts_data['Ano'].iloc[0]}→{ts_data['Ano'].iloc[-1]})", f"{change_pct:.1f}%")
+                        with col3:
+                            st.metric("Valor Máximo", f"{ts_data[ts_col].max():.2f}")
+                        with col4:
+                            st.metric("Volatilidade", f"{volatility:.1f}%")
+
+                        # Year-over-year changes
+                        if len(ts_data) > 2:
+                            st.subheader("📊 Variações Ano a Ano")
+                            yoy_changes = []
+                            for i in range(1, len(ts_data)):
+                                prev_val = ts_data[ts_col].iloc[i-1]
+                                curr_val = ts_data[ts_col].iloc[i]
+                                if prev_val != 0:
+                                    yoy_change = ((curr_val - prev_val) / prev_val) * 100
+                                    yoy_changes.append({
+                                        'Período': f"{ts_data['Ano'].iloc[i-1]}→{ts_data['Ano'].iloc[i]}",
+                                        'Variação': yoy_change
+                                    })
+
+                            if yoy_changes:
+                                yoy_df = pd.DataFrame(yoy_changes)
+                                yoy_chart = alt.Chart(yoy_df).mark_bar().encode(
+                                    x='Período:O',
+                                    y='Variação:Q',
+                                    color=alt.condition(
+                                        alt.datum.Variação > 0,
+                                        alt.value('green'),
+                                        alt.value('red')
+                                    ),
+                                    tooltip=['Período', alt.Tooltip('Variação', format='.1f')]
+                                ).properties(height=250)
+
+                                st.altair_chart(yoy_chart, width='stretch')
+
+                                # Summary of changes
+                                positive_changes = sum(1 for change in yoy_changes if change['Variação'] > 0)
+                                total_changes = len(yoy_changes)
+                                consistency = (positive_changes / total_changes) * 100 if total_changes > 0 else 0
+
+                                st.metric("Consistência de Crescimento", ".0f")
+
+                    # Data table with enhanced formatting
+                    st.subheader("📋 Dados Temporais Detalhados")
+                    display_ts = ts_data.copy()
+                    display_ts[ts_col] = display_ts[ts_col].round(2)
+
+                    # Add percentage change column
+                    if len(display_ts) > 1:
+                        display_ts['Variação %'] = display_ts[ts_col].pct_change() * 100
+                        display_ts['Variação %'] = display_ts['Variação %'].round(1)
+
+                    st.dataframe(
+                        display_ts.style.background_gradient(subset=[ts_col], cmap='YlGnBu')
+                        .format({ts_col: '{:,.2f}', 'Variação %': '{:+.1f}%'}),
+                        width='stretch'
+                    )
+            else:
+                st.info("Nenhuma coluna numérica disponível para análise temporal.")
+        else:
+            st.info("Coluna 'Ano' não encontrada para análise temporal.")
+
+    # Download filtered data
+    csv = df_filtered.to_csv(index=False)
+    st.download_button(
+        label="📥 Baixar Dados Filtrados como CSV",
+        data=csv,
+        file_name=f"{selected_dataset.replace(' ', '_').lower()}_filtrados.csv",
+        mime="text/csv"
+    )
+
+    # SQL Query Section (keep this for advanced users)
+    st.header("🔍 Interface Avançada de Consulta SQL")
+    with st.expander("Consulta SQL (para usuários avançados)"):
+        st.markdown("Use SQL para consultar seus dados. Tabelas disponíveis:")
+        table_list = [file.replace('.csv', '').replace('-', '_').replace(' ', '_').lower() for file in datasets.values() if load_csv(file) is not None]
+        st.code(", ".join(table_list), language="sql")
+
+        query = st.text_area("Digite sua consulta SQL:", value=f"SELECT * FROM {table_name} LIMIT 10;", height=100)
+
+        if st.button("Executar Consulta SQL"):
+            try:
+                result = conn.execute(query).fetchdf()
+                st.success(f"Consulta executada com sucesso! Retornou {len(result)} linhas.")
+                st.dataframe(result, width='stretch')
+
+                # Download button
+                csv = result.to_csv(index=False)
+                st.download_button(
+                    label="📥 Baixar Resultados SQL como CSV",
+                    data=csv,
+                    file_name="resultados_sql.csv",
+                    mime="text/csv"
+                )
+            except Exception as e:
+                st.error(f"Erro ao executar consulta: {str(e)}")
+
+else:
+    st.error(f"Conjunto de dados '{selected_dataset}' não encontrado. Execute o script de coleta primeiro.")
