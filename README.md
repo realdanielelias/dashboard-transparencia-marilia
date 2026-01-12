@@ -4,7 +4,7 @@ Dashboard interativo para análise de dados de transparência pública da Câmar
 
 Esse projeto foi desenvolvido como trabalho para o curso de Desenvolvimento e Analise de Sistemas da Uninter, na disciplina "Atividade Extensionista II: Tecnologia Aplicada a Inclusao Digital".
  
-Por ser tratar de um projeto inicial para estudo, ha algumas limitacoes e talvez existam algumas imprecisoes no tratamento dos dados. No futuro, esse projeto sera expandido fora das atividades curriculares de forma pessoal.
+Por se tratar de um projeto inicial para estudo, ha algumas limitacoes e talvez existam algumas imprecisoes no tratamento dos dados. No futuro, esse projeto sera expandido fora das atividades curriculares de forma pessoal.
 
 ## Funcionalidades
 
