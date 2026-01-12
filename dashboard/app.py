@@ -77,15 +77,15 @@ table_name = datasets[selected_dataset].replace('.csv', '').replace('-', '_').re
 if df is not None:
     st.header(f"📋 {selected_dataset}")
 
-    # Informações básicas
+    # Informações básicas (serão atualizadas após aplicação dos filtros)
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total de Linhas", len(df))
+        st.metric("Total de Linhas (Original)", len(df))
     with col2:
-        st.metric("Total de Colunas", len(df.columns))
+        st.metric("Total de Colunas (Original)", len(df.columns))
     with col3:
         if 'Ano' in df.columns:
-            st.metric("Anos", len(df['Ano'].unique()))
+            st.metric("Anos (Original)", len(df['Ano'].unique()))
 
     # Seleção de colunas
     st.subheader("🔍 Seleção de Colunas")
@@ -95,30 +95,43 @@ if df is not None:
         default=df.columns.tolist()[:5]  # Padrão para primeiras 5 colunas
     )
 
+    # Garantir que pelo menos uma coluna seja selecionada
+    if not selected_columns:
+        st.warning("⚠️ Selecione pelo menos uma coluna para continuar.")
+        selected_columns = df.columns.tolist()[:1]
+
     # Opções de filtragem
     st.subheader("🎯 Filtros")
 
-    # Filtro de ano (se disponível)
-    if 'Ano' in df.columns:
+    # Sempre começar com df_filtered baseado apenas nas colunas selecionadas
+    df_filtered = df[selected_columns].copy()
+
+    # Filtro de ano (se disponível e selecionado)
+    if 'Ano' in df.columns and 'Ano' in selected_columns:
         years = sorted(df['Ano'].unique())
         selected_years = st.multiselect("Selecionar Anos:", years, default=years)
         if selected_years:
-            df_filtered = df[df['Ano'].isin(selected_years) & df[selected_columns].notna().any(axis=1)]
-        else:
-            df_filtered = df[selected_columns]
+            # Filtrar o dataframe original e depois aplicar seleção de colunas
+            df_temp = df[df['Ano'].isin(selected_years)]
+            df_filtered = df_temp[selected_columns].dropna(how='all')
     else:
-        df_filtered = df[selected_columns]
+        # Se Ano não está selecionado, mostrar aviso
+        if 'Ano' in df.columns:
+            st.info("💡 Para filtrar por ano, inclua a coluna 'Ano' na seleção acima.")
 
-    # Filtro de busca de texto
+    # Filtro de busca de texto (apenas em colunas de texto selecionadas)
     search_term = st.text_input("Buscar em colunas de texto:")
     if search_term:
         text_columns = df_filtered.select_dtypes(include=['object']).columns
-        mask = pd.Series(False, index=df_filtered.index)
-        for col in text_columns:
-            mask |= df_filtered[col].astype(str).str.contains(search_term, case=False, na=False)
-        df_filtered = df_filtered[mask]
+        if len(text_columns) > 0:
+            mask = pd.Series(False, index=df_filtered.index)
+            for col in text_columns:
+                mask |= df_filtered[col].astype(str).str.contains(search_term, case=False, na=False)
+            df_filtered = df_filtered[mask]
+        else:
+            st.info("💡 Para busca de texto, inclua colunas de texto na seleção acima.")
 
-    # Filtros numéricos
+    # Filtros numéricos (apenas em colunas numéricas selecionadas)
     numeric_columns = df_filtered.select_dtypes(include=['number']).columns
     if len(numeric_columns) > 0:
         filter_col = st.selectbox("Filtrar por coluna numérica:", ["Nenhuma"] + list(numeric_columns))
@@ -134,6 +147,20 @@ if df is not None:
                 (df_filtered[filter_col] >= value_range[0]) &
                 (df_filtered[filter_col] <= value_range[1])
             ]
+    else:
+        st.info("💡 Para filtros numéricos, inclua colunas numéricas na seleção acima.")
+
+    # Informações atualizadas após filtros
+    st.subheader("📊 Dados Filtrados")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Linhas Filtradas", len(df_filtered))
+    with col2:
+        st.metric("Colunas Selecionadas", len(df_filtered.columns))
+    with col3:
+        if 'Ano' in df_filtered.columns and len(df_filtered) > 0:
+            anos_filtrados = len(df_filtered['Ano'].unique()) if not df_filtered['Ano'].isna().all() else 0
+            st.metric("Anos Filtrados", anos_filtrados)
 
     # Exibir dados filtrados
     st.subheader("📊 Tabela de Dados")
@@ -147,90 +174,101 @@ if df is not None:
     # Charts
     st.subheader("📊 Visualizações")
 
-    # Criar abas para diferentes tipos de gráficos
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Barras", "🥧 Pizza", "📈 Distribuição", "📉 Correlação", "📅 Temporal"])
+    # Verificar se há dados suficientes para visualizações
+    if len(df_filtered) == 0:
+        st.warning("⚠️ Nenhum dado disponível após aplicação dos filtros.")
+    else:
+        # Criar abas para diferentes tipos de gráficos
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Barras", "🥧 Pizza", "📈 Distribuição", "📉 Correlação", "📅 Temporal"])
 
-    with tab1:
-        st.markdown("**📊 Análise de Barras** - Distribuição de categorias")
+        with tab1:
+            st.markdown("**📊 Análise de Barras** - Distribuição de categorias")
 
-        categorical_cols = df_filtered.select_dtypes(include=['object']).columns
-        if len(categorical_cols) > 0:
-            col1, col2, col3 = st.columns([1.5, 1, 1])
-            with col1:
-                chart_col = st.selectbox("Coluna categórica:", categorical_cols, key="bar_chart_col")
-            with col2:
-                top_n = st.slider("Top N categorias:", 5, 20, 10, key="bar_top_n")
-            with col3:
-                chart_type = st.selectbox("Tipo:", ["Horizontal", "Vertical", "Normalizado"], key="bar_type")
-
-            if chart_col:
-                # Obter top N categorias
-                top_categories = df_filtered[chart_col].value_counts().head(top_n)
-                chart_data = pd.DataFrame({
-                    'categoria': top_categories.index,
-                    'contagem': top_categories.values
-                })
-
-                # Calcular percentuais
-                total = top_categories.sum()
-                chart_data['percentual'] = (chart_data['contagem'] / total * 100).round(1)
-
-                if chart_type == "Horizontal":
-                    # Gráfico de barras horizontal
-                    chart = alt.Chart(chart_data).mark_bar(
-                        color='steelblue',
-                        opacity=0.8
-                    ).encode(
-                        x=alt.X('contagem:Q', title='Contagem'),
-                        y=alt.Y('categoria:N', sort='-x', title=chart_col),
-                        tooltip=['categoria', 'contagem', 'percentual']
-                    ).properties(height=400)
-                elif chart_type == "Vertical":
-                    # Gráfico de barras vertical
-                    chart = alt.Chart(chart_data).mark_bar(
-                        color='steelblue',
-                        opacity=0.8
-                    ).encode(
-                        x=alt.X('categoria:N', title=chart_col, sort='-y'),
-                        y=alt.Y('contagem:Q', title='Contagem'),
-                        tooltip=['categoria', 'contagem', 'percentual']
-                    ).properties(height=400)
-                else:  # Normalizado
-                    # Gráfico de barras normalizado (percentuais)
-                    chart = alt.Chart(chart_data).mark_bar(
-                        color='steelblue',
-                        opacity=0.8
-                    ).encode(
-                        x=alt.X('percentual:Q', title='Percentual (%)'),
-                        y=alt.Y('categoria:N', sort='-x', title=chart_col),
-                        tooltip=['categoria', 'contagem', 'percentual']
-                    ).properties(height=400)
-
-                st.altair_chart(chart, width='stretch')
-
-                # Estatísticas resumidas
-                col1, col2, col3, col4 = st.columns(4)
+            categorical_cols = df_filtered.select_dtypes(include=['object']).columns
+            if len(categorical_cols) > 0:
+                col1, col2, col3 = st.columns([1.5, 1, 1])
                 with col1:
-                    st.metric("Total de Categorias", len(df_filtered[chart_col].unique()))
+                    # Garantir que a coluna selecionada ainda existe
+                    default_bar_col = categorical_cols[0] if len(categorical_cols) > 0 else None
+                    chart_col = st.selectbox("Coluna categórica:", categorical_cols, key="bar_chart_col", index=0)
                 with col2:
-                    st.metric("Top Categoria", top_categories.index[0])
+                    top_n = st.slider("Top N categorias:", 5, 20, 10, key="bar_top_n")
                 with col3:
-                    st.metric("Contagem Top", int(top_categories.iloc[0]))
-                with col4:
-                    top_percentage = (top_categories.iloc[0] / top_categories.sum()) * 100
-                    st.metric("Percentual Top", f"{top_percentage:.1f}%")
+                    chart_type = st.selectbox("Tipo:", ["Horizontal", "Vertical", "Normalizado"], key="bar_type")
 
-                # Tabela de detalhamento
-                st.subheader("📋 Detalhamento")
-                display_data = chart_data.copy()
-                display_data['percentual'] = display_data['percentual'].astype(str) + '%'
-                st.dataframe(
-                    display_data.style.background_gradient(subset=['contagem'], cmap='Blues')
-                    .format({'contagem': '{:,}', 'percentual': '{}'}),
-                    width='stretch'
-                )
-        else:
-            st.info("Nenhuma coluna categórica disponível para gráfico de barras.")
+                if chart_col and chart_col in df_filtered.columns:
+                    # Obter top N categorias apenas dos dados filtrados
+                    top_categories = df_filtered[chart_col].value_counts().head(top_n)
+                    if len(top_categories) > 0:
+                        chart_data = pd.DataFrame({
+                            'categoria': top_categories.index,
+                            'contagem': top_categories.values
+                        })
+
+                        # Calcular percentuais
+                        total = top_categories.sum()
+                        chart_data['percentual'] = (chart_data['contagem'] / total * 100).round(1)
+
+                        if chart_type == "Horizontal":
+                            # Gráfico de barras horizontal
+                            chart = alt.Chart(chart_data).mark_bar(
+                                color='steelblue',
+                                opacity=0.8
+                            ).encode(
+                                x=alt.X('contagem:Q', title='Contagem'),
+                                y=alt.Y('categoria:N', sort='-x', title=chart_col),
+                                tooltip=['categoria', 'contagem', 'percentual']
+                            ).properties(height=400)
+                        elif chart_type == "Vertical":
+                            # Gráfico de barras vertical
+                            chart = alt.Chart(chart_data).mark_bar(
+                                color='steelblue',
+                                opacity=0.8
+                            ).encode(
+                                x=alt.X('categoria:N', title=chart_col, sort='-y'),
+                                y=alt.Y('contagem:Q', title='Contagem'),
+                                tooltip=['categoria', 'contagem', 'percentual']
+                            ).properties(height=400)
+                        else:  # Normalizado
+                            # Gráfico de barras normalizado (percentuais)
+                            chart = alt.Chart(chart_data).mark_bar(
+                                color='steelblue',
+                                opacity=0.8
+                            ).encode(
+                                x=alt.X('percentual:Q', title='Percentual (%)'),
+                                y=alt.Y('categoria:N', sort='-x', title=chart_col),
+                                tooltip=['categoria', 'contagem', 'percentual']
+                            ).properties(height=400)
+
+                        st.altair_chart(chart, width='stretch')
+
+                        # Estatísticas resumidas baseadas apenas nos dados filtrados
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Total de Categorias", len(df_filtered[chart_col].unique()))
+                        with col2:
+                            st.metric("Top Categoria", top_categories.index[0])
+                        with col3:
+                            st.metric("Contagem Top", int(top_categories.iloc[0]))
+                        with col4:
+                            top_percentage = (top_categories.iloc[0] / top_categories.sum()) * 100
+                            st.metric("Percentual Top", f"{top_percentage:.1f}%")
+
+                        # Tabela de detalhamento
+                        st.subheader("📋 Detalhamento")
+                        display_data = chart_data.copy()
+                        display_data['percentual'] = display_data['percentual'].astype(str) + '%'
+                        st.dataframe(
+                            display_data.style.background_gradient(subset=['contagem'], cmap='Blues')
+                            .format({'contagem': '{:,}', 'percentual': '{}'}),
+                            width='stretch'
+                        )
+                    else:
+                        st.info("💡 Não há dados suficientes para gerar o gráfico de barras.")
+                else:
+                    st.info("💡 Selecione uma coluna categórica válida para o gráfico.")
+            else:
+                st.info("💡 Não há colunas categóricas disponíveis nos dados filtrados.")
 
     with tab2:
         st.markdown("**🥧 Análise de Pizza** - Proporções das categorias")
@@ -239,26 +277,89 @@ if df is not None:
         if len(categorical_cols) > 0:
             col1, col2, col3 = st.columns([1.5, 1, 1])
             with col1:
-                pie_col = st.selectbox("Coluna categórica:", categorical_cols, key="pie_chart_col")
+                # Garantir que a coluna selecionada ainda existe
+                pie_col = st.selectbox("Coluna categórica:", categorical_cols, key="pie_chart_col", index=0)
             with col2:
                 pie_limit = st.slider("Máximo de categorias:", 5, 15, 8, key="pie_limit")
             with col3:
                 show_labels = st.checkbox("Mostrar rótulos", value=True, key="pie_labels")
 
-            if pie_col:
-                # Obter categorias principais para gráfico de pizza
+            if pie_col and pie_col in df_filtered.columns:
+                # Obter categorias principais para gráfico de pizza apenas dos dados filtrados
                 pie_data = df_filtered[pie_col].value_counts().head(pie_limit)
-                # Adicionar categoria "Outros" se houver mais categorias
-                if len(df_filtered[pie_col].value_counts()) > pie_limit:
-                    other_count = df_filtered[pie_col].value_counts().iloc[pie_limit:].sum()
-                    pie_data = pd.concat([pie_data, pd.Series({'Outros': other_count})])
+                if len(pie_data) > 0:
+                    # Adicionar categoria "Outros" se houver mais categorias
+                    if len(df_filtered[pie_col].value_counts()) > pie_limit:
+                        other_count = df_filtered[pie_col].value_counts().iloc[pie_limit:].sum()
+                        pie_data = pd.concat([pie_data, pd.Series({'Outros': other_count})])
 
-                pie_df = pd.DataFrame({
-                    'categoria': pie_data.index,
-                    'valor': pie_data.values
-                })
+                    pie_df = pd.DataFrame({
+                        'categoria': pie_data.index,
+                        'valor': pie_data.values
+                    })
 
-                pie_df['percentual'] = (pie_df['valor'] / pie_df['valor'].sum() * 100).round(1)
+                    pie_df['percentual'] = (pie_df['valor'] / pie_df['valor'].sum() * 100).round(1)
+
+                    # Criar gráfico de pizza
+                    if show_labels:
+                        pie_chart = alt.Chart(pie_df).mark_arc(
+                            innerRadius=50,
+                            outerRadius=120
+                        ).encode(
+                            theta=alt.Theta('valor:Q'),
+                            color=alt.Color('categoria:N',
+                                scale=alt.Scale(scheme='category20'),
+                                legend=alt.Legend(title=pie_col, orient='bottom')
+                            ),
+                            tooltip=['categoria', 'valor', 'percentual']
+                        ).properties(height=350)
+                    else:
+                        pie_chart = alt.Chart(pie_df).mark_arc(
+                            innerRadius=50,
+                            outerRadius=120
+                        ).encode(
+                            theta=alt.Theta('valor:Q'),
+                            color=alt.Color('categoria:N',
+                                scale=alt.Scale(scheme='category20'),
+                                legend=alt.Legend(title=pie_col, orient='bottom')
+                            ),
+                            tooltip=['categoria', 'valor', 'percentual']
+                        ).properties(height=350)
+
+                    st.altair_chart(pie_chart, width='stretch')
+
+                    # Métricas resumidas baseadas apenas nos dados filtrados
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Total de Categorias", len(pie_df))
+                    with col2:
+                        st.metric("Maior Fatia", pie_df.loc[pie_df['valor'].idxmax(), 'categoria'])
+                    with col3:
+                        st.metric("Percentual Maior", f"{pie_df['percentual'].max():.1f}%")
+                    with col4:
+                        entropy = -sum((pie_df['percentual']/100) * np.log2(pie_df['percentual']/100)) if len(pie_df) > 1 else 0
+                        st.metric("Diversidade", f"{entropy:.2f}")
+
+                    # Verificar se há categoria dominante
+                    max_pct = pie_df['percentual'].max()
+                    if max_pct > 50:
+                        st.warning(f"⚠️ **Categoria dominante:** {pie_df.loc[pie_df['percentual'].idxmax(), 'categoria']} representa {max_pct:.1f}% do total")
+
+                    # Tabela de detalhamento
+                    st.subheader("📋 Detalhamento")
+                    display_df = pie_df.copy()
+                    display_df['percentual'] = display_df['percentual'].astype(str) + '%'
+                    st.dataframe(
+                        display_df.style.background_gradient(subset=['valor'], cmap='Oranges')
+                        .format({'valor': '{:,}', 'percentual': '{}'}),
+                        width='stretch'
+                    )
+                else:
+                    st.info("💡 Não há dados suficientes para gerar o gráfico de pizza.")
+            else:
+                st.info("💡 Selecione uma coluna categórica válida para o gráfico.")
+        else:
+            st.info("💡 Não há colunas categóricas disponíveis nos dados filtrados.")
 
                 # Criar gráfico de pizza
                 if show_labels:
@@ -325,15 +426,18 @@ if df is not None:
             st.info("Nenhuma coluna categórica disponível para gráfico de pizza.")
 
     with tab3:
-        st.markdown("**Histogramas e Distribuições** - Análise de valores numéricos")
+        st.markdown("**📈 Distribuição** - Histogramas e análise de valores numéricos")
+
+        numeric_columns = df_filtered.select_dtypes(include=['number']).columns
         if len(numeric_columns) > 0:
             col1, col2 = st.columns([2, 1])
             with col1:
-                hist_col = st.selectbox("Coluna numérica:", numeric_columns, key="hist_col")
+                # Garantir que a coluna selecionada ainda existe
+                hist_col = st.selectbox("Coluna numérica:", numeric_columns, key="hist_col", index=0)
             with col2:
                 bins = st.slider("Número de bins:", 10, 50, 20, key="hist_bins")
 
-            if hist_col:
+            if hist_col and hist_col in df_filtered.columns:
                 # Remover valores NaN para o histograma
                 hist_data = df_filtered[hist_col].dropna()
 
@@ -377,7 +481,10 @@ if df is not None:
             st.info("Nenhuma coluna numérica disponível para histogramas.")
 
     with tab4:
-        st.markdown("**📊 Análise de Correlação** - Relacionamentos entre variáveis")
+        st.markdown("**� Correlação** - Relacionamentos entre variáveis numéricas")
+
+        numeric_columns = df_filtered.select_dtypes(include=['number']).columns
+        categorical_cols = df_filtered.select_dtypes(include=['object']).columns
 
         if len(numeric_columns) >= 2:
             # Matriz de Correlação
@@ -487,9 +594,11 @@ if df is not None:
             st.info("São necessárias pelo menos 2 colunas numéricas para análise de correlação.")
 
     with tab5:
-        st.markdown("**Análise Temporal** - Evolução ao longo do tempo")
-        if 'Ano' in df_filtered.columns:
-            if len(numeric_columns) > 0:
+        st.markdown("**📅 Temporal** - Evolução ao longo do tempo")
+
+        numeric_columns = df_filtered.select_dtypes(include=['number']).columns
+
+        if 'Ano' in df_filtered.columns and len(numeric_columns) > 0:
                 col1, col2, col3 = st.columns([2, 1, 1])
                 with col1:
                     ts_col = st.selectbox("Coluna numérica:", numeric_columns, key="ts_col")
