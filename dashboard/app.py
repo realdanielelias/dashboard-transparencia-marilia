@@ -78,12 +78,14 @@ if df is not None:
     st.header(f"📋 {selected_dataset}")
 
     # Informações básicas (serão atualizadas após aplicação dos filtros)
+    # Métricas originais (antes dos filtros)
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Total de Linhas (Original)", len(df))
     with col2:
         st.metric("Total de Colunas (Original)", len(df.columns))
     with col3:
+        # Só mostra anos se a coluna 'Ano' estiver presente
         if 'Ano' in df.columns:
             st.metric("Anos (Original)", len(df['Ano'].unique()))
 
@@ -104,18 +106,18 @@ if df is not None:
     st.subheader("🎯 Filtros")
 
     # Sempre começar com df_filtered baseado apenas nas colunas selecionadas
+    # Todas as métricas e gráficos devem usar apenas df_filtered
     df_filtered = df[selected_columns].copy()
 
-    # Filtro de ano (se disponível e selecionado)
-    if 'Ano' in df.columns and 'Ano' in selected_columns:
-        years = sorted(df['Ano'].unique())
+    # Filtro de ano (apenas se 'Ano' estiver nas colunas selecionadas)
+    if 'Ano' in df_filtered.columns:
+        years = sorted(df_filtered['Ano'].unique())
         selected_years = st.multiselect("Selecionar Anos:", years, default=years)
         if selected_years:
-            # Filtrar o dataframe original e depois aplicar seleção de colunas
-            df_temp = df[df['Ano'].isin(selected_years)]
-            df_filtered = df_temp[selected_columns].dropna(how='all')
+            # Filtrar o dataframe já filtrado
+            df_filtered = df_filtered[df_filtered['Ano'].isin(selected_years)]
     else:
-        # Se Ano não está selecionado, mostrar aviso
+        # Se 'Ano' não está nas colunas selecionadas, mostrar aviso
         if 'Ano' in df.columns:
             st.info("💡 Para filtrar por ano, inclua a coluna 'Ano' na seleção acima.")
 
@@ -135,7 +137,7 @@ if df is not None:
     numeric_columns = df_filtered.select_dtypes(include=['number']).columns
     if len(numeric_columns) > 0:
         filter_col = st.selectbox("Filtrar por coluna numérica:", ["Nenhuma"] + list(numeric_columns))
-        if filter_col != "Nenhuma":
+        if filter_col != "Nenhuma" and filter_col in df_filtered.columns:
             min_val = float(df_filtered[filter_col].min())
             max_val = float(df_filtered[filter_col].max())
             value_range = st.slider(
@@ -158,6 +160,7 @@ if df is not None:
     with col2:
         st.metric("Colunas Selecionadas", len(df_filtered.columns))
     with col3:
+        # Só mostra anos filtrados se 'Ano' estiver presente
         if 'Ano' in df_filtered.columns and len(df_filtered) > 0:
             anos_filtrados = len(df_filtered['Ano'].unique()) if not df_filtered['Ano'].isna().all() else 0
             st.metric("Anos Filtrados", anos_filtrados)
@@ -183,13 +186,11 @@ if df is not None:
 
         with tab1:
             st.markdown("**📊 Análise de Barras** - Distribuição de categorias")
-
+            # Só usa colunas categóricas presentes em df_filtered
             categorical_cols = df_filtered.select_dtypes(include=['object']).columns
             if len(categorical_cols) > 0:
                 col1, col2, col3 = st.columns([1.5, 1, 1])
                 with col1:
-                    # Garantir que a coluna selecionada ainda existe
-                    default_bar_col = categorical_cols[0] if len(categorical_cols) > 0 else None
                     chart_col = st.selectbox("Coluna categórica:", categorical_cols, key="bar_chart_col", index=0)
                 with col2:
                     top_n = st.slider("Top N categorias:", 5, 20, 10, key="bar_top_n")
@@ -277,7 +278,6 @@ if df is not None:
         if len(categorical_cols) > 0:
             col1, col2, col3 = st.columns([1.5, 1, 1])
             with col1:
-                # Garantir que a coluna selecionada ainda existe
                 pie_col = st.selectbox("Coluna categórica:", categorical_cols, key="pie_chart_col", index=0)
             with col2:
                 pie_limit = st.slider("Máximo de categorias:", 5, 15, 8, key="pie_limit")
@@ -358,72 +358,9 @@ if df is not None:
                     st.info("💡 Não há dados suficientes para gerar o gráfico de pizza.")
             else:
                 st.info("💡 Selecione uma coluna categórica válida para o gráfico.")
+
         else:
             st.info("💡 Não há colunas categóricas disponíveis nos dados filtrados.")
-
-                # Criar gráfico de pizza
-                if show_labels:
-                    pie_chart = alt.Chart(pie_df).mark_arc(
-                        innerRadius=50,
-                        outerRadius=120
-                    ).encode(
-                        theta=alt.Theta('valor:Q'),
-                        color=alt.Color('categoria:N',
-                            scale=alt.Scale(scheme='category20'),
-                            legend=alt.Legend(title=pie_col, orient='bottom')
-                        ),
-                        tooltip=['categoria', 'valor', 'percentual']
-                    ).properties(height=350)
-                else:
-                    pie_chart = alt.Chart(pie_df).mark_arc(
-                        innerRadius=50,
-                        outerRadius=120
-                    ).encode(
-                        theta=alt.Theta('valor:Q'),
-                        color=alt.Color('categoria:N',
-                            scale=alt.Scale(scheme='category20'),
-                            legend=alt.Legend(title=pie_col, orient='bottom')
-                        ),
-                        tooltip=['categoria', 'valor', 'percentual']
-                    ).properties(height=350)
-
-                st.altair_chart(pie_chart, width='stretch')
-
-                # Métricas resumidas
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total de Categorias", len(pie_df))
-                with col2:
-                    st.metric("Maior Fatia", pie_df.loc[pie_df['valor'].idxmax(), 'categoria'])
-                with col3:
-                    st.metric("Percentual Maior", f"{pie_df['percentual'].max():.1f}%")
-                with col4:
-                    entropy = -sum((pie_df['percentual']/100) * np.log2(pie_df['percentual']/100)) if len(pie_df) > 1 else 0
-                    st.metric("Concentração", f"{entropy:.1f}")
-
-                # Detalhamento detalhado
-                st.subheader("📋 Detalhamento por Categoria")
-                display_df = pie_df.copy()
-                display_df['percentual'] = display_df['percentual'].astype(str) + '%'
-                st.dataframe(
-                    display_df.style.background_gradient(subset=['valor'], cmap='Oranges')
-                    .format({'valor': '{:,}', 'percentual': '{}'}),
-                    width='stretch'
-                )
-
-                # Insights adicionais
-                if len(pie_df) > 1:
-                    st.subheader("💡 Insights")
-                    entropy = -sum((pie_df['percentual']/100) * np.log2(pie_df['percentual']/100))
-                    diversity = "Alta" if entropy > 2 else "Média" if entropy > 1 else "Baixa"
-                    st.info(f"**Diversidade de distribuição:** {diversity} (entropia = {entropy:.2f})")
-
-                    # Verificar categoria dominante
-                    max_pct = pie_df['percentual'].max()
-                    if max_pct > 50:
-                        st.warning(f"⚠️ **Categoria dominante:** {pie_df.loc[pie_df['percentual'].idxmax(), 'categoria']} representa {max_pct:.1f}% do total")
-        else:
-            st.info("Nenhuma coluna categórica disponível para gráfico de pizza.")
 
     with tab3:
         st.markdown("**📈 Distribuição** - Histogramas e análise de valores numéricos")
@@ -432,7 +369,6 @@ if df is not None:
         if len(numeric_columns) > 0:
             col1, col2 = st.columns([2, 1])
             with col1:
-                # Garantir que a coluna selecionada ainda existe
                 hist_col = st.selectbox("Coluna numérica:", numeric_columns, key="hist_col", index=0)
             with col2:
                 bins = st.slider("Número de bins:", 10, 50, 20, key="hist_bins")
@@ -598,16 +534,17 @@ if df is not None:
 
         numeric_columns = df_filtered.select_dtypes(include=['number']).columns
 
+        # Só permite análise temporal se 'Ano' estiver nas colunas selecionadas
         if 'Ano' in df_filtered.columns and len(numeric_columns) > 0:
-                col1, col2, col3 = st.columns([2, 1, 1])
-                with col1:
-                    ts_col = st.selectbox("Coluna numérica:", numeric_columns, key="ts_col")
-                with col2:
-                    agg_func = st.selectbox("Agregação:", ["Soma", "Média", "Contagem"], key="ts_agg")
-                with col3:
-                    chart_type = st.selectbox("Tipo:", ["Linha", "Área", "Barra"], key="ts_type")
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                ts_col = st.selectbox("Coluna numérica:", numeric_columns, key="ts_col")
+            with col2:
+                agg_func = st.selectbox("Agregação:", ["Soma", "Média", "Contagem"], key="ts_agg")
+            with col3:
+                chart_type = st.selectbox("Tipo:", ["Linha", "Área", "Barra"], key="ts_type")
 
-                if ts_col:
+            if ts_col:
                     # Agregar dados por ano
                     if agg_func == "Soma":
                         ts_data = df_filtered.groupby('Ano')[ts_col].sum().reset_index()
