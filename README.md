@@ -4,6 +4,8 @@
 
 Dashboard interativo para análise de dados de transparência pública da Câmara Municipal e Prefeitura de Marília/SP.
 
+Link para testes: https://dashboard-transparencia-marilia-dkqcz4x586asybbsbhqea7.streamlit.app/
+
 Esse projeto foi desenvolvido como trabalho para o curso de Desenvolvimento e Analise de Sistemas da Uninter, na disciplina "Atividade Extensionista II: Tecnologia Aplicada a Inclusao Digital".
  
 Por se tratar de um projeto inicial para estudo, ha algumas limitacoes e talvez existam algumas imprecisoes no tratamento dos dados. No futuro, esse projeto sera expandido fora das atividades curriculares de forma pessoal.
@@ -22,6 +24,7 @@ Por se tratar de um projeto inicial para estudo, ha algumas limitacoes e talvez 
 - Prefeitura: COVID-19, Passagens, Investimentos, Receita Analítica, Emendas Parlamentares
 
 ## 📊 Como Usar
+Acesse: https://dashboard-transparencia-marilia-dkqcz4x586asybbsbhqea7.streamlit.app/
 
 1. Selecione um conjunto de dados no menu lateral
 2. Use os filtros para refinar os dados
